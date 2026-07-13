@@ -162,7 +162,7 @@ class App(tk.Tk):
             self,
             text="Desenvolvido por Luigi Giuseppe",
             font=("Segoe UI", 8),
-            fg="#888888",
+            fg="#1F1E1E",
         ).pack(side="bottom", pady=(0, 6))
 
         self.log_text = scrolledtext.ScrolledText(self, height=18, state="disabled", font=("Consolas", 9))
