@@ -1,0 +1,20 @@
+# Credenciais e configuração local — nunca versionar
+.env
+
+# Artefatos gerados em tempo de execução (recriados automaticamente)
+logs/
+chrome_profile/
+.venv/
+
+# Documentação gerada localmente (contém informações internas) —
+# fica só na máquina de quem roda o build_pdf.py / build.js, não no repo
+docs/*.docx
+docs/*.pdf
+
+# Python
+__pycache__/
+*.pyc
+
+# Sistema operacional / editor
+.DS_Store
+Thumbs.db
