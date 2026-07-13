@@ -144,6 +144,7 @@ class App(tk.Tk):
                     "(só funciona de ponta a ponta se o reCAPTCHA estiver desativado). "
                     "Se ainda pedir código de autenticação ou captcha, complete manualmente "
                     "(o código cliente já vem preenchido pelo link)."
+                    "Desenvolved by Luigi Giuseppe"
                 )
             )
         else:

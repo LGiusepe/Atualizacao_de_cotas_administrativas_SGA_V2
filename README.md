@@ -28,4 +28,23 @@ mesmo assim na pasta de logs.
   - `Documentacao_Atualizacao_Cotas.pdf` / `.docx` — versão para
     compartilhar/imprimir com o mesmo conteúdo do RUNBOOK. Esses dois
     arquivos ficam só na máquina local (não são versionados no
-    re
+    repositório — veja `.gitignore`).
+- **`logs/`** e **`chrome_profile/`** — criadas automaticamente na primeira
+  execução (resultados e perfil de navegador persistente). Também não são
+  versionadas: `chrome_profile/` guarda cookies de sessão reais e nunca
+  deve ir para um repositório, ainda mais um público.
+
+## Leia primeiro
+
+Antes de rodar por conta própria, veja **`docs/RUNBOOK.md`** — explica o
+fluxo completo, inclusive a parte de login (que pode pedir código de
+autenticação e captcha; o código cliente é fixo por link e já vem
+preenchido automaticamente).
+
+## Segurança
+
+Este repositório não deve nunca conter: o arquivo `.env` (credenciais
+reais), a pasta `chrome_profile/` (cookies de sessão) ou a pasta `logs/`
+(dados de execução). Tudo isso já está listado no `.gitignore`. Se algum
+desses itens aparecer em `git status` como pronto para commit, **não
+prossiga** — confira o `.gitignore` antes de continuar.
