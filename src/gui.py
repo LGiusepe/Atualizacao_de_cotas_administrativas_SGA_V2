@@ -37,7 +37,7 @@ APP_TITLE = "Atualização de Cotas — Hinova"
 # Logo exibida no topo da janela. Fica em AtualizaCotas/assets/ (uma pasta
 # acima de src/) — se o arquivo não existir, a janela abre normalmente sem
 # a logo (não trava o programa por causa disso).
-LOGO_PATH = os.path.join(core.ROOT_DIR, "assets", "logo_golplus.png")
+LOGO_PATH = os.path.join(core.ROOT_DIR, "assets", "logo_gol_plus.png")
 
 
 class App(tk.Tk):
@@ -153,15 +153,20 @@ class App(tk.Tk):
         self.progresso_label = tk.Label(self, text="", font=("Segoe UI", 9))
         self.progresso_label.pack(pady=(4, 0))
 
-        self.log_text = scrolledtext.ScrolledText(self, height=18, state="disabled", font=("Consolas", 9))
-        self.log_text.pack(fill="both", expand=True, padx=15, pady=10)
-
+        # O rodapé precisa ser "reservado" (side="bottom") ANTES do log, que
+        # usa expand=True. No gerenciador pack do Tkinter, quem é empacotado
+        # primeiro reserva seu espaço primeiro — se o log (expand=True) fosse
+        # empacotado antes, ele tomaria toda a altura da janela e o rodapé
+        # ficaria sem espaço nenhum sobrando (por isso ele "sumia").
         tk.Label(
             self,
             text="Desenvolvido por Luigi Giuseppe",
             font=("Segoe UI", 8),
             fg="#888888",
         ).pack(side="bottom", pady=(0, 6))
+
+        self.log_text = scrolledtext.ScrolledText(self, height=18, state="disabled", font=("Consolas", 9))
+        self.log_text.pack(fill="both", expand=True, padx=15, pady=10)
 
     # ------------------------------------------------------------------
     def _atualizar_status_login(self):
