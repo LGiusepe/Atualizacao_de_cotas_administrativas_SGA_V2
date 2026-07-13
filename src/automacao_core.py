@@ -78,6 +78,7 @@ from selenium.common.exceptions import (
     ElementClickInterceptedException,
     StaleElementReferenceException,
     TimeoutException,
+    WebDriverException,
 )
 
 # Este arquivo mora em .../AtualizaCotas/src/ — ROOT_DIR é a pasta acima
@@ -209,10 +210,53 @@ def credenciais_configuradas():
     return bool(os.getenv("HINOVA_USUARIO")) and bool(os.getenv("HINOVA_SENHA"))
 
 
-def iniciar_driver():
+def _limpar_travas_chrome(pasta_perfil):
+    """Remove os arquivos de "trava" que o Chrome deixa para trás quando um
+    processo anterior não fecha direito (ex.: a janela foi fechada no X, o
+    processo travou, ou o computador foi desligado com o Chrome aberto).
+
+    Enquanto esses arquivos existem, o Chrome se recusa a abrir de novo
+    usando essa mesma pasta de perfil — e o Selenium recebe o erro
+    "unknown error: net::ERR_CONNECTION_REFUSED" (o Chrome nem chega a
+    abrir de verdade). Apagar esses arquivos antes de cada início resolve
+    isso sem precisar apagar o perfil inteiro (login/cookies continuam
+    salvos)."""
+    for nome in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+        caminho = os.path.join(pasta_perfil, nome)
+        try:
+            if os.path.islink(caminho) or os.path.exists(caminho):
+                os.remove(caminho)
+        except OSError:
+            pass
+
+
+def iniciar_driver(log=print):
+    os.makedirs(CHROME_PROFILE_DIR, exist_ok=True)
+    _limpar_travas_chrome(CHROME_PROFILE_DIR)
+
     options = Options()
     options.add_argument(f"--user-data-dir={CHROME_PROFILE_DIR}")
-    driver = webdriver.Chrome(options=options)
+
+    try:
+        driver = webdriver.Chrome(options=options)
+    except WebDriverException as e:
+        # Segunda tentativa: às vezes a trava só aparece de novo bem no
+        # instante do lançamento (ex.: outro Chrome com o mesmo perfil
+        # ainda fechando). Espera um pouco, limpa de novo e tenta uma
+        # última vez antes de desistir com uma mensagem clara.
+        log(f"Chrome não abriu na primeira tentativa ({e}). Tentando novamente...")
+        time.sleep(2)
+        _limpar_travas_chrome(CHROME_PROFILE_DIR)
+        try:
+            driver = webdriver.Chrome(options=options)
+        except WebDriverException as e2:
+            raise RuntimeError(
+                "Não foi possível abrir o Chrome para a automação. Feche TODAS as "
+                "janelas do Chrome (inclusive pelo Gerenciador de Tarefas, procurando "
+                "por 'chrome.exe' e 'chromedriver.exe') e tente novamente. "
+                f"Detalhe técnico: {e2}"
+            ) from e2
+
     driver.maximize_window()
     return driver, WebDriverWait(driver, 20)
 
@@ -667,7 +711,7 @@ def executar(chaves_perfis, caminhos_planilhas=None, log=print, progresso=None, 
     """
     caminhos_planilhas = caminhos_planilhas or {}
 
-    driver, wait = iniciar_driver()
+    driver, wait = iniciar_driver(log=log)
     historico_total, erros_total = [], []
     caminhos_resultado = {}
 
