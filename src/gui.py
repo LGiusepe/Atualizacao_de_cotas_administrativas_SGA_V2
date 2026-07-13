@@ -34,6 +34,11 @@ import automacao_core as core
 
 APP_TITLE = "Atualização de Cotas — Hinova"
 
+# Logo exibida no topo da janela. Fica em AtualizaCotas/assets/ (uma pasta
+# acima de src/) — se o arquivo não existir, a janela abre normalmente sem
+# a logo (não trava o programa por causa disso).
+LOGO_PATH = os.path.join(core.ROOT_DIR, "assets", "logo_golplus.png")
+
 
 class App(tk.Tk):
     def __init__(self):
@@ -57,6 +62,22 @@ class App(tk.Tk):
 
     # ------------------------------------------------------------------
     def _montar_layout(self):
+        self._logo_img = None  # mantém referência viva (senão o Tkinter descarta a imagem)
+        if os.path.exists(LOGO_PATH):
+            try:
+                img = tk.PhotoImage(file=LOGO_PATH)
+                # Reduz a imagem se ela vier grande (ex.: exportada em alta
+                # resolução) para não dominar o topo da janela — mantém a
+                # proporção usando subsample (recorte por fator inteiro).
+                largura_alvo = 220
+                if img.width() > largura_alvo:
+                    fator = max(1, img.width() // largura_alvo)
+                    img = img.subsample(fator, fator)
+                self._logo_img = img
+                tk.Label(self, image=self._logo_img).pack(pady=(12, 4))
+            except tk.TclError:
+                pass  # arquivo presente mas não é um PNG válido — segue sem a logo
+
         tk.Label(
             self,
             text="Selecione as planilhas já reajustadas de PT1 e PT2 e clique em Iniciar.",
@@ -135,6 +156,13 @@ class App(tk.Tk):
         self.log_text = scrolledtext.ScrolledText(self, height=18, state="disabled", font=("Consolas", 9))
         self.log_text.pack(fill="both", expand=True, padx=15, pady=10)
 
+        tk.Label(
+            self,
+            text="Desenvolvido por Luigi Giuseppe",
+            font=("Segoe UI", 8),
+            fg="#888888",
+        ).pack(side="bottom", pady=(0, 6))
+
     # ------------------------------------------------------------------
     def _atualizar_status_login(self):
         if core.credenciais_configuradas():
@@ -144,7 +172,6 @@ class App(tk.Tk):
                     "(só funciona de ponta a ponta se o reCAPTCHA estiver desativado). "
                     "Se ainda pedir código de autenticação ou captcha, complete manualmente "
                     "(o código cliente já vem preenchido pelo link)."
-                    "Desenvolved by Luigi Giuseppe"
                 )
             )
         else:
