@@ -7,6 +7,13 @@ logs/
 chrome_profile/
 .venv/
 
+# Empacotamento em .exe (build_exe.bat / PyInstaller) — gerado a cada build,
+# não deve ir para o histórico do Git (é grande e muda toda hora). Distribua
+# pelo GitHub Releases em vez de commitar — veja docs/DISTRIBUICAO.md.
+build/
+dist/
+*.spec
+
 # Documentação gerada localmente (contém informações internas) —
 # fica só na máquina de quem roda o build_pdf.py / build.js, não no repo
 docs/*.docx
@@ -17,4 +24,5 @@ __pycache__/
 *.pyc
 
 # Sistema operacional / editor
-.D
+.DS_Store
+Thumbs.db

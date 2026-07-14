@@ -47,7 +47,7 @@ APP_TITLE = "Atualização de Cotas — Hinova"
 # Logo exibida no topo da janela. Fica em AtualizaCotas/assets/ (uma pasta
 # acima de src/) — se o arquivo não existir, a janela abre normalmente sem
 # a logo (não trava o programa por causa disso).
-LOGO_PATH = os.path.join(core.ROOT_DIR, "assets", "logo_gol_plus.png")
+LOGO_PATH = os.path.join(core.PASTA_RECURSOS, "assets", "logo_gol_plus.png")
 
 
 class App(tk.Tk):
@@ -410,4 +410,4 @@ class App(tk.Tk):
 
 if __name__ == "__main__":
     app = App()
-    app.mainloop()
+    app.mainl

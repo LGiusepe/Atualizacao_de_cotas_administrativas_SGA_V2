@@ -13,9 +13,18 @@ janela. Pausar espera terminar a linha/planilha atual antes de parar; Parar
 interrompe de vez — o que já foi processado até aquele momento é salvo
 mesmo assim na pasta de logs.
 
+### Rodar sem instalar Python (como um programa comum)
+
+Quem só vai usar o programa (sem mexer no código) não precisa clonar este
+repositório nem instalar Python — pode baixar um `.exe` único direto da
+aba **Releases** do GitHub e dar duplo clique. Veja
+**`docs/DISTRIBUICAO.md`** para como gerar e publicar esse `.exe`.
+
 ## Estrutura da pasta
 
-- **`run.bat`** — clique aqui para começar.
+- **`run.bat`** — clique aqui para começar (rodando a partir do código-fonte).
+- **`build_exe.bat`** — gera um `.exe` único e distribuível, sem expor o
+  código (veja `docs/DISTRIBUICAO.md`).
 - **`.env.example`** — modelo de credenciais opcionais (copie para `.env`
   e preencha localmente; o `.env` real nunca é versionado).
 - **`requirements.txt`** — dependências Python (instaladas automaticamente
@@ -24,8 +33,29 @@ mesmo assim na pasta de logs.
   `atualizar_cotas.py`).
 - **`docs/`** — documentação:
   - `RUNBOOK.md` — passo a passo completo de execução (comece por aqui).
+  - `DISTRIBUICAO.md` — como gerar e publicar o `.exe` para quem só usa o
+    programa.
   - `POWER_AUTOMATE_MIGRATION.md` — guia opcional de migração futura.
   - `Documentacao_Atualizacao_Cotas.pdf` / `.docx` — versão para
     compartilhar/imprimir com o mesmo conteúdo do RUNBOOK. Esses dois
     arquivos ficam só na máquina local (não são versionados no
-    re
+    repositório — veja `.gitignore`).
+- **`logs/`** e **`chrome_profile/`** — criadas automaticamente na primeira
+  execução (resultados e perfil de navegador persistente). Também não são
+  versionadas: `chrome_profile/` guarda cookies de sessão reais e nunca
+  deve ir para um repositório, ainda mais um público.
+
+## Leia primeiro
+
+Antes de rodar por conta própria, veja **`docs/RUNBOOK.md`** — explica o
+fluxo completo, inclusive a parte de login (que pode pedir código de
+autenticação e captcha; o código cliente é fixo por link e já vem
+preenchido automaticamente).
+
+## Segurança
+
+Este repositório não deve nunca conter: o arquivo `.env` (credenciais
+reais), a pasta `chrome_profile/` (cookies de sessão) ou a pasta `logs/`
+(dados de execução). Tudo isso já está listado no `.gitignore`. Se algum
+desses itens aparecer em `git status` como pronto para commit, **não
+prossiga** — confira o `.gitignore` antes de continuar.

@@ -81,6 +81,7 @@ atualizada e um reprocessamento completo é o que se quer.
 
 import json
 import os
+import sys
 import threading
 import time
 import unicodedata
@@ -102,16 +103,49 @@ from selenium.common.exceptions import (
 )
 
 # Este arquivo mora em .../AtualizaCotas/src/ — ROOT_DIR é a pasta acima
-# (.../AtualizaCotas), onde ficam .env, logs/ e chrome_profile/, para que
-# esses fiquem visíveis e fáceis de achar na raiz do projeto.
+# (.../AtualizaCotas). Só é usado quando rodando a partir do código-fonte
+# (python src/gui.py); quando o programa é empacotado como .exe (PyInstaller,
+# veja build_exe.bat), __file__ aponta para dentro de uma pasta temporária de
+# extração, então não serve para achar onde salvar dados.
 SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(SRC_DIR)
-load_dotenv(os.path.join(ROOT_DIR, ".env"))
+
+# Rodando "congelado" (frozen) = empacotado como .exe pelo PyInstaller.
+_FROZEN = bool(getattr(sys, "frozen", False))
+
+
+def _pasta_dados():
+    """Onde ficam os dados que precisam SOBREVIVER entre execuções: .env,
+    logs/, chrome_profile/, config.local.json. Rodando a partir do
+    código-fonte, é a raiz do projeto. Empacotado como .exe, é a pasta onde
+    o .exe está — nunca a pasta temporária de extração do PyInstaller
+    (sys._MEIPASS), que é apagada assim que o programa fecha e faria a
+    pessoa perder login salvo, progresso, logs etc. a cada execução."""
+    if _FROZEN:
+        return os.path.dirname(sys.executable)
+    return ROOT_DIR
+
+
+def _pasta_recursos():
+    """Onde ficam os recursos empacotados só de LEITURA (ex.: a logo em
+    assets/). Rodando a partir do código-fonte, é a raiz do projeto.
+    Empacotado com --onefile, o PyInstaller extrai esses arquivos para uma
+    pasta temporária a cada execução (sys._MEIPASS) — por isso nunca deve
+    ser usada para salvar nada, só para ler o que foi empacotado junto."""
+    if _FROZEN:
+        return getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    return ROOT_DIR
+
+
+PASTA_DADOS = _pasta_dados()
+PASTA_RECURSOS = _pasta_recursos()
+
+load_dotenv(os.path.join(PASTA_DADOS, ".env"))
 
 LOGIN_URL = "https://saturno.hinova.com.br/sga/sgav4_grupo_golplus/v5/login.php"
 COTAS_URL = "https://saturno.hinova.com.br/sga/sgav4_grupo_golplus/v5/Cota/listar"
 
-LOG_DIR = os.path.join(ROOT_DIR, "logs")
+LOG_DIR = os.path.join(PASTA_DADOS, "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 # Arquivo de progresso (checkpoint), usado para retomar automaticamente após
@@ -121,17 +155,17 @@ CHECKPOINT_PATH = os.path.join(LOG_DIR, "checkpoint.json")
 
 # Configuração local (não versionada): guarda coisas específicas de quem
 # está rodando o programa nessa máquina, como o último caminho de planilha
-# usado por perfil. Fica na raiz do projeto, mas é coberta pelo
-# .gitignore — nunca deve ser commitada (poderia expor caminhos/pastas
+# usado por perfil. Fica junto do .exe (ou na raiz do projeto, rodando do
+# código-fonte) — nunca deve ser commitada (poderia expor caminhos/pastas
 # pessoais do computador de quem roda).
-CONFIG_PATH = os.path.join(ROOT_DIR, "config.local.json")
+CONFIG_PATH = os.path.join(PASTA_DADOS, "config.local.json")
 
 # Perfil de navegador persistente: mantém cookies entre execuções para que o
 # próprio Hinova possa "lembrar" o dispositivo (se ele oferecer isso),
 # reduzindo com que frequência o código de autenticação/captcha aparece.
 # Isso não contorna nada — só evita limpar cookies a cada execução, como um
 # navegador normal que você não desloga.
-CHROME_PROFILE_DIR = os.path.join(ROOT_DIR, "chrome_profile")
+CHROME_PROFILE_DIR = os.path.join(PASTA_DADOS, "chrome_profile")
 os.makedirs(CHROME_PROFILE_DIR, exist_ok=True)
 
 
