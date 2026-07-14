@@ -164,7 +164,7 @@ class App(tk.Tk):
 
         tk.Button(
             botoes_frame,
-            text="Recomeçar do zero",
+            text="Descartar progresso salvo",
             command=self._recomecar_do_zero,
         ).pack(side="left", padx=6)
 
