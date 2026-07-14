@@ -35,6 +35,12 @@ primeiro "tipo_veiculo_cota" e cai para "descricao_cota"; PT2 tenta
 primeiro "descricao_cota" e cai para "tipo_veiculo_cota". Cada perfil
 descreve isso separadamente em PERFIS, abaixo.
 
+Nenhum dos dois perfis tem mais um caminho de planilha fixo no código-fonte
+(isso já foi um caminho pessoal do OneDrive, que não deveria ficar exposto
+num repositório público). O caminho é sempre escolhido pela pessoa na GUI
+("Selecionar arquivo...") e o último usado fica lembrado localmente em
+config.local.json (fora do repositório — veja .gitignore), não no código.
+
 Conferência do código antes de editar
 --------------------------------------
 Depois de encontrar uma linha na tabela do SGA, o código realmente exibido
@@ -58,8 +64,22 @@ ControleExecucao é um objeto simples e thread-safe (a automação roda numa
 thread separada da janela) que a GUI usa para pedir pausa/retomada ou
 parada. A checagem acontece em pontos seguros do loop — nunca no meio de
 uma ação dentro do navegador.
+
+Retomada automática após erro de navegador
+--------------------------------------------
+Erros como "net::ERR_CONNECTION_TIMED_OUT" (rede instável, VPN, etc.)
+derrubam a sessão do Chrome no meio do processamento. Em vez de deixar isso
+travar tudo, cada linha bem-sucedida (ou já registrada como erro tratado)
+salva um "checkpoint" — a próxima linha a processar — num arquivo em
+logs/checkpoint.json. Se a execução parar por um erro assim, ela é
+encerrada de forma limpa (resultados salvos, Chrome fechado) e a PRÓXIMA
+vez que o programa rodar, automaticamente continua da linha onde parou, em
+vez de reprocessar a planilha inteira do começo. O botão "Recomeçar do
+zero" na GUI descarta esse progresso salvo, para quando a planilha foi
+atualizada e um reprocessamento completo é o que se quer.
 """
 
+import json
 import os
 import threading
 import time
@@ -88,19 +108,23 @@ SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(SRC_DIR)
 load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
-# As planilhas PT1/PT2 continuam guardadas na pasta original do OneDrive —
-# aqui na pasta de automação usamos apenas um apontamento (caminho absoluto)
-# para elas, sem duplicar/copiar os dados.
-ONEDRIVE_DIR = (
-    r"C:\Users\luigi.faria\OneDrive - Gol Plus Proteção Patrimonial"
-    r"\Documentos\DESENVOLVIMENTOS\AtualizacaoDeCotas"
-)
-
 LOGIN_URL = "https://saturno.hinova.com.br/sga/sgav4_grupo_golplus/v5/login.php"
 COTAS_URL = "https://saturno.hinova.com.br/sga/sgav4_grupo_golplus/v5/Cota/listar"
 
 LOG_DIR = os.path.join(ROOT_DIR, "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
+
+# Arquivo de progresso (checkpoint), usado para retomar automaticamente após
+# um erro de navegador/conexão. Fica junto dos outros arquivos gerados em
+# tempo de execução (logs/), então já está coberto pelo .gitignore.
+CHECKPOINT_PATH = os.path.join(LOG_DIR, "checkpoint.json")
+
+# Configuração local (não versionada): guarda coisas específicas de quem
+# está rodando o programa nessa máquina, como o último caminho de planilha
+# usado por perfil. Fica na raiz do projeto, mas é coberta pelo
+# .gitignore — nunca deve ser commitada (poderia expor caminhos/pastas
+# pessoais do computador de quem roda).
+CONFIG_PATH = os.path.join(ROOT_DIR, "config.local.json")
 
 # Perfil de navegador persistente: mantém cookies entre execuções para que o
 # próprio Hinova possa "lembrar" o dispositivo (se ele oferecer isso),
@@ -162,7 +186,10 @@ class PerfilPlanilha:
 
     chave: str
     nome: str
-    caminho_padrao: str
+    # Sem caminho fixo no código-fonte de propósito (veja o topo do
+    # arquivo) — a pessoa sempre escolhe o arquivo na GUI, e o último
+    # caminho usado fica lembrado em config.local.json (não versionado).
+    caminho_padrao: str = ""
     # Ordem de tentativa dos ids de campo de busca (descrição) na tela do
     # Hinova. O campo de código ("codigo_cota") é sempre preenchido também,
     # como no desenvolvimento original — a busca combina os dois critérios.
@@ -182,7 +209,6 @@ PERFIS = {
     "PT1": PerfilPlanilha(
         chave="PT1",
         nome="PT 1",
-        caminho_padrao=os.path.join(ONEDRIVE_DIR, "boot_pt1", "DEFINITIVO_COTAS PT 1.xlsx"),
         # PT1: tenta primeiro "tipo_veiculo_cota" (campo original) e, se
         # não achar, cai para "descricao_cota" também — como na PT2, só
         # que na ordem inversa — antes de considerar a cota não encontrada
@@ -192,15 +218,11 @@ PERFIS = {
     "PT2": PerfilPlanilha(
         chave="PT2",
         nome="PT 2",
-        caminho_padrao=os.path.join(ONEDRIVE_DIR, "boot_pt2", "DEFINITIVO_COTAS PT 2.xlsx"),
         # PT2 (desenvolvimento original/beta): tenta primeiro
         # "descricao_cota" e, se não achar, cai para "tipo_veiculo_cota".
         campos_busca=("descricao_cota", "tipo_veiculo_cota"),
     ),
 }
-# Os caminhos acima apontam para a pasta original no OneDrive — nada foi
-# copiado. Se preferir, use o botão "Selecionar arquivo..." na interface
-# gráfica para apontar para outro local a qualquer momento.
 
 
 def credenciais_configuradas():
@@ -208,6 +230,92 @@ def credenciais_configuradas():
     decidir se vale tentar o login automático — não bloqueia a execução,
     já que o login manual continua funcionando sem isso."""
     return bool(os.getenv("HINOVA_USUARIO")) and bool(os.getenv("HINOVA_SENHA"))
+
+
+def _carregar_config_local():
+    """Configurações locais que não devem ir para o repositório (por ora,
+    só o último caminho de planilha usado por cada perfil). Se o arquivo
+    não existir ou estiver corrompido, começa vazio."""
+    if not os.path.exists(CONFIG_PATH):
+        return {}
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def salvar_ultimo_caminho(chave, caminho):
+    """Lembra o último caminho de planilha usado para esse perfil, para a
+    GUI já vir preenchida da próxima vez — sem precisar de um caminho fixo
+    no código-fonte (que ficaria exposto no repositório público)."""
+    if not caminho:
+        return
+    config = _carregar_config_local()
+    config.setdefault("ultimo_caminho", {})[chave] = caminho
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+    except OSError:
+        pass  # lembrar o caminho é best-effort — não deve travar a GUI
+
+
+def obter_ultimo_caminho(chave):
+    """Devolve o último caminho de planilha usado para esse perfil nesta
+    máquina, ou "" se nunca foi usado nenhum (a pessoa escolhe pela GUI)."""
+    config = _carregar_config_local()
+    return config.get("ultimo_caminho", {}).get(chave, "")
+
+
+def _carregar_checkpoints():
+    """Lê o progresso salvo de execuções anteriores (uma entrada por
+    planilha). Se o arquivo não existir ou estiver corrompido, começa do
+    zero — isso nunca deve travar a automação."""
+    if not os.path.exists(CHECKPOINT_PATH):
+        return {}
+    try:
+        with open(CHECKPOINT_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _salvar_checkpoint(chave, caminho_planilha, proxima_linha):
+    """Registra qual é a próxima linha a processar dessa planilha. Chamado
+    depois de CADA linha (com sucesso ou já registrada como erro tratado),
+    para que uma parada por erro de navegador retome exatamente daqui."""
+    checkpoints = _carregar_checkpoints()
+    checkpoints[chave] = {"caminho": caminho_planilha, "proxima_linha": proxima_linha}
+    try:
+        with open(CHECKPOINT_PATH, "w", encoding="utf-8") as f:
+            json.dump(checkpoints, f, ensure_ascii=False, indent=2)
+    except OSError:
+        pass  # salvar o progresso é best-effort — nunca deve travar a automação
+
+
+def _limpar_checkpoint(chave):
+    """Remove o progresso salvo de uma planilha específica — chamado quando
+    ela termina de ser processada por completo, para que a próxima execução
+    comece do zero (presumindo uma planilha nova/atualizada)."""
+    checkpoints = _carregar_checkpoints()
+    if chave in checkpoints:
+        del checkpoints[chave]
+        try:
+            with open(CHECKPOINT_PATH, "w", encoding="utf-8") as f:
+                json.dump(checkpoints, f, ensure_ascii=False, indent=2)
+        except OSError:
+            pass
+
+
+def limpar_todos_checkpoints():
+    """Descarta qualquer progresso salvo de execuções anteriores. Usado
+    quando a pessoa quer forçar um recomeço do zero (ex.: a planilha foi
+    atualizada e as linhas já marcadas como concluídas não valem mais)."""
+    try:
+        if os.path.exists(CHECKPOINT_PATH):
+            os.remove(CHECKPOINT_PATH)
+    except OSError:
+        pass
 
 
 def _limpar_travas_chrome(pasta_perfil):
@@ -259,6 +367,29 @@ def iniciar_driver(log=print):
 
     driver.maximize_window()
     return driver, WebDriverWait(driver, 20)
+
+
+def _navegar_com_retentativas(driver, url, log=print, tentativas=3, espera_segundos=5):
+    """Tenta abrir `url` algumas vezes antes de desistir. Erros de navegador
+    como "net::ERR_CONNECTION_TIMED_OUT" costumam ser momentâneos (rede
+    instável, Wi-Fi, VPN etc.) — vale tentar de novo antes de considerar a
+    execução perdida. Se esgotar as tentativas, relança o erro original
+    (quem chamou decide o que fazer — normalmente, parar e deixar a próxima
+    execução retomar daqui, via checkpoint)."""
+    ultimo_erro = None
+    for tentativa in range(1, tentativas + 1):
+        try:
+            driver.get(url)
+            return
+        except WebDriverException as e:
+            ultimo_erro = e
+            if tentativa < tentativas:
+                log(
+                    f"Erro de conexão com o navegador (tentativa {tentativa}/{tentativas}): "
+                    f"{e}. Tentando de novo em {espera_segundos}s..."
+                )
+                time.sleep(espera_segundos)
+    raise ultimo_erro
 
 
 def _clicar_robusto(driver, elemento):
@@ -589,7 +720,7 @@ def _resolver_coluna(df, candidatos, log=print):
 
 def processar_planilha(
     driver, wait, perfil: PerfilPlanilha, caminho_planilha, log=print, progresso=None,
-    historico=None, erros=None, controle=None,
+    historico=None, erros=None, controle=None, retomar=True,
 ):
     """Processa uma planilha, linha por linha. `historico`/`erros` podem
     ser listas já existentes (mutadas diretamente, por referência) —
@@ -597,6 +728,13 @@ def processar_planilha(
     chamou esta função (executar, abaixo) ainda enxerga tudo que já foi
     processado até aquele ponto, e consegue salvar a planilha de log
     mesmo assim.
+
+    Se `retomar` for True (padrão) e existir um checkpoint salvo para essa
+    planilha (do mesmo arquivo), o processamento começa a partir da linha
+    onde uma execução anterior parou por erro de navegador, em vez do
+    início. Um erro de navegador (WebDriverException) durante uma linha
+    interrompe o processamento desta planilha SEM avançar o checkpoint —
+    ou seja, a próxima execução tenta essa mesma linha de novo.
     """
     log(f"Processando {perfil.nome}: {caminho_planilha}")
     df = pd.read_excel(caminho_planilha).round(2)
@@ -616,7 +754,19 @@ def processar_planilha(
     historico = historico if historico is not None else []
     erros = erros if erros is not None else []
 
-    for i in range(total):
+    linha_inicial = 0
+    if retomar:
+        checkpoints = _carregar_checkpoints()
+        ponto_salvo = checkpoints.get(perfil.chave)
+        if ponto_salvo and ponto_salvo.get("caminho") == caminho_planilha:
+            linha_inicial = min(int(ponto_salvo.get("proxima_linha", 0)), total)
+            if linha_inicial > 0:
+                log(
+                    f"Retomando {perfil.nome} a partir da linha {linha_inicial + 1} de {total} "
+                    f"(uma execução anterior parou aqui por um erro de navegador/conexão)."
+                )
+
+    for i in range(linha_inicial, total):
         if controle is not None:
             controle.verificar(log=log)  # bloqueia se pausado; levanta se pediram parar
 
@@ -635,8 +785,9 @@ def processar_planilha(
                 registro = df.iloc[i].to_dict()
                 registro["Motivo_Erro"] = "Cota não encontrada na busca"
                 erros.append(registro)
-                driver.get(COTAS_URL)
+                _navegar_com_retentativas(driver, COTAS_URL, log=log)
                 time.sleep(3)
+                _salvar_checkpoint(perfil.chave, caminho_planilha, i + 1)
                 continue
 
             if not _codigos_conferem(codigo_busca, codigo_sga):
@@ -648,8 +799,9 @@ def processar_planilha(
                 registro = df.iloc[i].to_dict()
                 registro["Motivo_Erro"] = f"Código divergente: esperado {codigo_busca}, SGA mostrou {codigo_sga}"
                 erros.append(registro)
-                driver.get(COTAS_URL)
+                _navegar_com_retentativas(driver, COTAS_URL, log=log)
                 time.sleep(3)
+                _salvar_checkpoint(perfil.chave, caminho_planilha, i + 1)
                 continue
 
             valor_antigo, valor_novo_str = atualizar_linha(driver, wait, novo_valor)
@@ -667,15 +819,31 @@ def processar_planilha(
 
         except ExecucaoInterrompida:
             raise
+        except WebDriverException as e:
+            # Erro do navegador/conexão (ex.: ERR_CONNECTION_TIMED_OUT). Não
+            # registra checkpoint desta linha de propósito: a próxima
+            # execução deve tentar essa mesma linha de novo, em vez de
+            # pular para a seguinte. Propaga para executar() encerrar tudo
+            # de forma limpa (fecha o Chrome, salva o que já foi feito).
+            log(
+                f"[ERRO DE NAVEGADOR] {perfil.nome} — código {codigo_busca}: {e}. "
+                f"Parando aqui para não perder o progresso — a próxima execução retoma "
+                f"desta linha."
+            )
+            raise
         except Exception as e:
             log(f"[ERRO] {perfil.nome} — código {codigo_busca}: {e}")
             registro = df.iloc[i].to_dict()
             registro["Motivo_Erro"] = str(e)
             erros.append(registro)
 
-        driver.get(COTAS_URL)
+        _navegar_com_retentativas(driver, COTAS_URL, log=log)
         time.sleep(3)
+        _salvar_checkpoint(perfil.chave, caminho_planilha, i + 1)
 
+    # Terminou a planilha inteira sem interrupção — descarta o checkpoint
+    # para que uma próxima execução comece do zero (planilha nova/atualizada).
+    _limpar_checkpoint(perfil.chave)
     return historico, erros
 
 
@@ -693,14 +861,19 @@ def salvar_resultados(historico, erros, timestamp=None):
     return caminhos
 
 
-def executar(chaves_perfis, caminhos_planilhas=None, log=print, progresso=None, controle=None):
+def executar(chaves_perfis, caminhos_planilhas=None, log=print, progresso=None, controle=None, retomar=True):
     """Ponto de entrada único usado pela GUI e pelo script de linha de comando.
 
     chaves_perfis: lista de chaves de PERFIS a processar, ex: ["PT1", "PT2"]
     caminhos_planilhas: dict opcional {chave: caminho_do_arquivo}. Se omitido
-        (ou faltando uma chave), usa o caminho_padrao do perfil.
+        (ou faltando uma chave), usa o caminho_padrao do perfil (vazio por
+        padrão — normalmente é a GUI que sempre passa o caminho escolhido
+        ou lembrado em config.local.json).
     controle: ControleExecucao opcional, usado pela GUI para pausar/retomar
         ou interromper a execução.
+    retomar: se True (padrão), continua automaticamente do checkpoint salvo
+        de cada planilha (ver processar_planilha). Passar False força um
+        reprocessamento completo, ignorando qualquer progresso salvo.
 
     historico_total/erros_total são passados por referência para
     processar_planilha e salvos num "finally" — ou seja, mesmo que a
@@ -708,12 +881,19 @@ def executar(chaves_perfis, caminhos_planilhas=None, log=print, progresso=None, 
     fechado, um erro inesperado no meio do processamento etc.), a planilha
     de histórico e/ou de itens com erro é salva com tudo que já tinha sido
     processado até aquele momento.
+
+    Um erro de navegador (WebDriverException, ex.: "net::ERR_CONNECTION_
+    TIMED_OUT") não sobe como uma exceção crua para quem chamou — é
+    capturado aqui, registrado de forma legível e devolvido no resultado
+    como "erro_fatal", para a GUI mostrar uma mensagem clara em vez do
+    stacktrace técnico do ChromeDriver.
     """
     caminhos_planilhas = caminhos_planilhas or {}
 
     driver, wait = iniciar_driver(log=log)
     historico_total, erros_total = [], []
     caminhos_resultado = {}
+    erro_fatal_msg = None
 
     try:
         login(driver, wait, log=log, controle=controle)
@@ -729,10 +909,25 @@ def executar(chaves_perfis, caminhos_planilhas=None, log=print, progresso=None, 
             processar_planilha(
                 driver, wait, perfil, caminho, log=log, progresso=progresso,
                 historico=historico_total, erros=erros_total, controle=controle,
+                retomar=retomar,
             )
     except ExecucaoInterrompida:
         log("")
         log("Execução interrompida pelo usuário — salvando o que já foi processado...")
+    except WebDriverException as e:
+        log("")
+        log("=" * 60)
+        log("A execução parou por um erro de conexão com o navegador/Chrome.")
+        log(f"Detalhe técnico: {e}")
+        log("O que já tinha sido processado foi salvo. Rode o programa de novo —")
+        log("ele continua automaticamente de onde parou, sem reprocessar o que já foi feito.")
+        log("=" * 60)
+        erro_fatal_msg = (
+            "A execução parou por um erro de conexão com o navegador/Chrome "
+            "(rede instável, VPN, Wi-Fi, etc.). O que já tinha sido processado "
+            "foi salvo. Rode de novo — o programa continua automaticamente de "
+            "onde parou."
+        )
     finally:
         try:
             driver.quit()
@@ -748,4 +943,5 @@ def executar(chaves_perfis, caminhos_planilhas=None, log=print, progresso=None, 
         "total_erros": len(erros_total),
         "arquivos": caminhos_resultado,
         "interrompido": bool(controle is not None and controle.deve_parar),
+        "erro_fatal": erro_fatal_msg,
     }

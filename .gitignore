@@ -1,5 +1,6 @@
 # Credenciais e configuração local — nunca versionar
 .env
+config.local.json
 
 # Artefatos gerados em tempo de execução (recriados automaticamente)
 logs/
@@ -16,5 +17,4 @@ __pycache__/
 *.pyc
 
 # Sistema operacional / editor
-.DS_Store
-Thumbs.db
+.D

@@ -137,12 +137,12 @@ login na hora ou não.
 | "Tempo esgotado aguardando o login manual" | Login não foi concluído em 10 minutos | Rode de novo e complete o login mais rapidamente |
 | Login automático não preenche nada | `.env` não existe ou está vazio | Normal — nesse caso o login é sempre manual. Preencha o `.env` se quiser tentar o automático |
 | Muitos itens em "itens_para_reprocessar" | Código da planilha não bate com o cadastrado no sistema | Confirme os códigos na planilha base antes de gerar PT1/PT2 |
-| Processo trava no meio (depois do login) | Internet instável ou sistema Hinova lento | Pode rodar de novo — o programa recarrega a página a cada item, então repetir é seguro |
+| Processo trava no meio (depois do login) | Internet instável ou sistema Hinova lento | Pode rodar de novo — o programa salva o progresso e continua automaticamente de onde parou, sem reprocessar o que já foi feito |
 | Janela do programa não abre ao dar duplo clique em run.bat | Python não instalado, ou Tkinter ausente na instalação | Instale o Python oficial (python.org), marcando a opção "tcl/tk" durante a instalação |
 
 ## Onde encontrar cada arquivo
 
-**Automação** (esta pasta, `C:\Users\luigi.faria\developer\AtualizaCotas`):
+**Automação** (a pasta onde este projeto foi instalado):
 
 - `run.bat` — launcher de um clique (na raiz).
 - `.env.example` / `requirements.txt` — configuração (na raiz).
@@ -153,10 +153,11 @@ login na hora ou não.
 - `docs/` — esta documentação, incluindo PDF/DOCX para compartilhar.
 - `logs/` e `chrome_profile/` — criadas automaticamente na raiz.
 
-**Dados** (planilhas PT1/PT2, planilha base, notebooks antigos) — continuam
-em `C:\Users\luigi.faria\OneDrive - Gol Plus Proteção Patrimonial\Documentos\
-DESENVOLVIMENTOS\AtualizacaoDeCotas`, sem nenhuma cópia ou remoção — a
-automação apenas referencia esse caminho.
+**Planilhas PT1/PT2**: não ficam num caminho fixo dentro do programa — você
+escolhe o arquivo pelo botão "Selecionar arquivo..." na interface. O último
+caminho escolhido de cada uma fica lembrado localmente (em
+`config.local.json`, que não é compartilhado nem vai para o repositório),
+então nas próximas execuções o campo já vem preenchido sozinho.
 
 ## Próximo passo (opcional): Power Automate Desktop
 
@@ -167,5 +168,4 @@ para ficar mais "oficial"/integrada ao ecossistema 365 (Teams, SharePoint,
 histórico de execução no portal). Veja `POWER_AUTOMATE_MIGRATION.md` para o
 passo a passo — incluindo a mesma limitação de captcha/2FA descrita aqui, que
 vale para qualquer ferramenta de automação, não só para este script.
-Recomenda-se manter as duas versões rodando em paralelo por um tempo antes
-de aposentar a versão em Python.
+Recome

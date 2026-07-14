@@ -20,6 +20,16 @@ disponíveis. Pausar para a execução no início da próxima linha/planilha
 vez — o que já tiver sido processado até aquele momento é salvo mesmo
 assim na pasta de logs.
 
+Planilhas: não há mais um caminho padrão fixo no código — a pessoa escolhe
+o arquivo pelo botão "Selecionar arquivo..." e o último caminho usado fica
+lembrado localmente (config.local.json, fora do repositório) para já vir
+preenchido da próxima vez.
+
+Retomada automática: se uma execução parar por erro de navegador/conexão
+(ex.: internet caiu), rodar de novo continua automaticamente da linha onde
+parou. O botão "Recomeçar do zero" descarta esse progresso salvo, para
+quando a planilha foi atualizada e vale reprocessar tudo.
+
 Nada é executado automaticamente: a pessoa sempre precisa clicar em um
 botão e confirmar antes de qualquer ação real no sistema.
 """
@@ -47,9 +57,11 @@ class App(tk.Tk):
         self.geometry("760x640")
         self.minsize(680, 540)
 
+        # Prefill com o último caminho usado (lembrado localmente, fora do
+        # repositório) em vez de um caminho fixo no código-fonte.
         self.caminhos = {
-            "PT1": tk.StringVar(value=core.PERFIS["PT1"].caminho_padrao),
-            "PT2": tk.StringVar(value=core.PERFIS["PT2"].caminho_padrao),
+            "PT1": tk.StringVar(value=core.obter_ultimo_caminho("PT1")),
+            "PT2": tk.StringVar(value=core.obter_ultimo_caminho("PT2")),
         }
         self.fila_log = queue.Queue()
         self.executando = False
@@ -150,6 +162,12 @@ class App(tk.Tk):
             command=self._abrir_pasta_logs,
         ).pack(side="left", padx=6)
 
+        tk.Button(
+            botoes_frame,
+            text="Recomeçar do zero",
+            command=self._recomecar_do_zero,
+        ).pack(side="left", padx=6)
+
         self.progresso_label = tk.Label(self, text="", font=("Segoe UI", 9))
         self.progresso_label.pack(pady=(4, 0))
 
@@ -195,6 +213,7 @@ class App(tk.Tk):
         )
         if caminho:
             self.caminhos[chave].set(caminho)
+            core.salvar_ultimo_caminho(chave, caminho)
 
     def _abrir_pasta_logs(self):
         os.makedirs(core.LOG_DIR, exist_ok=True)
@@ -202,6 +221,23 @@ class App(tk.Tk):
             os.startfile(core.LOG_DIR)  # Windows
         except AttributeError:
             messagebox.showinfo(APP_TITLE, f"Pasta de logs: {core.LOG_DIR}")
+
+    def _recomecar_do_zero(self):
+        if self.executando:
+            messagebox.showwarning(APP_TITLE, "Espere a execução atual terminar (ou pare-a) antes de recomeçar.")
+            return
+        confirmar = messagebox.askyesno(
+            APP_TITLE,
+            "Isso descarta o progresso salvo de execuções anteriores (o ponto em que "
+            "cada planilha parou por um erro de navegador). Na próxima vez que rodar, "
+            "o processamento começa da primeira linha de novo.\n\n"
+            "Use isso quando a planilha foi atualizada e você quer reprocessar tudo.\n\n"
+            "Deseja continuar?",
+        )
+        if not confirmar:
+            return
+        core.limpar_todos_checkpoints()
+        self._log("Progresso salvo descartado — a próxima execução começa da primeira linha.")
 
     def _log(self, mensagem):
         self.fila_log.put(mensagem)
@@ -231,6 +267,14 @@ class App(tk.Tk):
             messagebox.showwarning(APP_TITLE, "Já existe uma atualização em andamento.")
             return
 
+        for c in chaves:
+            caminho = self.caminhos[c].get().strip()
+            if not caminho:
+                messagebox.showwarning(
+                    APP_TITLE, f"Selecione a planilha de {c} antes de iniciar (botão 'Selecionar arquivo...')."
+                )
+                return
+
         nomes = " e ".join(core.PERFIS[c].nome for c in chaves)
         confirmar = messagebox.askyesno(
             APP_TITLE,
@@ -246,6 +290,9 @@ class App(tk.Tk):
             return
 
         caminhos_planilhas = {c: self.caminhos[c].get() for c in chaves}
+        for c, caminho in caminhos_planilhas.items():
+            core.salvar_ultimo_caminho(c, caminho)
+
         self.executando = True
         self.pausado = False
         self.controle = core.ControleExecucao()
@@ -298,7 +345,11 @@ class App(tk.Tk):
                 controle=self.controle,
             )
             self._log("")
-            if resultado.get("interrompido"):
+
+            if resultado.get("erro_fatal"):
+                self._log(f"PAROU POR ERRO DE CONEXÃO — {resultado['total_atualizados']} atualizados, "
+                           f"{resultado['total_erros']} com erro até o momento da parada.")
+            elif resultado.get("interrompido"):
                 self._log(
                     f"INTERROMPIDO PELO USUÁRIO — {resultado['total_atualizados']} atualizados, "
                     f"{resultado['total_erros']} com erro até o momento da parada."
@@ -311,15 +362,26 @@ class App(tk.Tk):
             for tipo, caminho in resultado["arquivos"].items():
                 self._log(f"Arquivo salvo ({tipo}): {caminho}")
 
-            titulo_msg = "Interrompido" if resultado.get("interrompido") else "Concluído!"
-            self.after(
-                0,
-                lambda: messagebox.showinfo(
-                    APP_TITLE,
-                    f"{titulo_msg}\n{resultado['total_atualizados']} cotas atualizadas.\n"
-                    f"{resultado['total_erros']} com erro (veja a pasta de logs).",
-                ),
-            )
+            if resultado.get("erro_fatal"):
+                self.after(
+                    0,
+                    lambda: messagebox.showwarning(
+                        APP_TITLE,
+                        f"{resultado['erro_fatal']}\n\n"
+                        f"{resultado['total_atualizados']} atualizadas até agora, "
+                        f"{resultado['total_erros']} com erro.",
+                    ),
+                )
+            else:
+                titulo_msg = "Interrompido" if resultado.get("interrompido") else "Concluído!"
+                self.after(
+                    0,
+                    lambda: messagebox.showinfo(
+                        APP_TITLE,
+                        f"{titulo_msg}\n{resultado['total_atualizados']} cotas atualizadas.\n"
+                        f"{resultado['total_erros']} com erro (veja a pasta de logs).",
+                    ),
+                )
         except Exception as e:
             # Captura a mensagem como string agora: "except ... as e" apaga
             # a variável "e" assim que este bloco termina, então um lambda
