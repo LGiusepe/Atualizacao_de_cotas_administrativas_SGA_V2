@@ -168,4 +168,5 @@ para ficar mais "oficial"/integrada ao ecossistema 365 (Teams, SharePoint,
 histórico de execução no portal). Veja `POWER_AUTOMATE_MIGRATION.md` para o
 passo a passo — incluindo a mesma limitação de captcha/2FA descrita aqui, que
 vale para qualquer ferramenta de automação, não só para este script.
-Recome
+Recomenda-se manter as duas versões rodando em paralelo por um tempo antes
+de aposentar a versão em Python.
